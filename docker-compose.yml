@@ -35,6 +35,12 @@ services:
     ports:
       - "4443:443"
       - "4443:443/udp"
+    environment:
+      - CONTAINER_NAME=RELAY1
+      - EXTERNAL_PORT=4443
+      - LISTENING_IP=localhost
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   relay2:
     <<: *x-moq
@@ -46,6 +52,12 @@ services:
     ports:
       - "4444:443"
       - "4444:443/udp"
+    environment:
+      - CONTAINER_NAME=RELAY2
+      - EXTERNAL_PORT=4444
+      - LISTENING_IP=localhost
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   dir:
     <<: *x-moq

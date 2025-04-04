@@ -1,4 +1,4 @@
-use std::{net, sync::Arc, time};
+use std::{ net, sync::Arc, time };
 
 use anyhow::Context;
 use clap::Parser;
@@ -7,7 +7,7 @@ use url::Url;
 use crate::tls;
 
 use futures::future::BoxFuture;
-use futures::stream::{FuturesUnordered, StreamExt};
+use futures::stream::{ FuturesUnordered, StreamExt };
 use futures::FutureExt;
 
 #[derive(Parser, Clone)]
@@ -76,7 +76,8 @@ impl Endpoint {
 		let socket = std::net::UdpSocket::bind(config.bind).context("failed to bind UDP socket")?;
 
 		// Create the generic QUIC endpoint.
-		let quic = quinn::Endpoint::new(endpoint_config, server_config.clone(), socket, runtime)
+		let quic = quinn::Endpoint
+			::new(endpoint_config, server_config.clone(), socket, runtime)
 			.context("failed to create QUIC endpoint")?;
 
 		let server = server_config.is_some().then(|| Server {
@@ -120,22 +121,15 @@ impl Server {
 	async fn accept_session(conn: quinn::Incoming) -> anyhow::Result<web_transport::Session> {
 		let mut conn = conn.accept()?;
 
-		let handshake = conn
-			.handshake_data()
-			.await?
-			.downcast::<quinn::crypto::rustls::HandshakeData>()
-			.unwrap();
+		let handshake = conn.handshake_data().await?.downcast::<quinn::crypto::rustls::HandshakeData>().unwrap();
 
 		let alpn = handshake.protocol.context("missing ALPN")?;
 		let alpn = String::from_utf8_lossy(&alpn);
 		let server_name = handshake.server_name.unwrap_or_default();
 
-		log::debug!(
-			"received QUIC handshake: ip={} alpn={} server={}",
-			conn.remote_address(),
-			alpn,
-			server_name,
-		);
+		log::debug!("received QUIC handshake: ip={} alpn={} server={}", conn.remote_address(), alpn, server_name);
+
+		// !IMPORTANT: Dit lijkt me de plek waar de quic handshake gebeurt met de clients
 
 		// Wait for the QUIC connection to be established.
 		let conn = conn.await.context("failed to establish QUIC connection")?;
@@ -145,21 +139,18 @@ impl Server {
 			conn.stable_id(),
 			conn.remote_address(),
 			alpn,
-			server_name,
+			server_name
 		);
 
 		let session = match alpn.as_bytes() {
 			web_transport_quinn::ALPN => {
 				// Wait for the CONNECT request.
-				let request = web_transport_quinn::accept(conn)
-					.await
+				let request = web_transport_quinn
+					::accept(conn).await
 					.context("failed to receive WebTransport request")?;
 
 				// Accept the CONNECT request.
-				request
-					.ok()
-					.await
-					.context("failed to respond to WebTransport request")?
+				request.ok().await.context("failed to respond to WebTransport request")?
 			}
 			// A bit of a hack to pretend like we're a WebTransport session
 			moq_transport::setup::ALPN => conn.into(),
@@ -202,8 +193,8 @@ impl Client {
 		let port = url.port().unwrap_or(443);
 
 		// Look up the DNS entry.
-		let addr = tokio::net::lookup_host((host.clone(), port))
-			.await
+		let addr = tokio::net
+			::lookup_host((host.clone(), port)).await
 			.context("failed DNS lookup")?
 			.next()
 			.context("no DNS entries")?;

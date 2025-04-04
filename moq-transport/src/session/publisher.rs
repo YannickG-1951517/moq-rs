@@ -1,19 +1,16 @@
-use std::{
-	collections::{hash_map, HashMap},
-	sync::{Arc, Mutex},
-};
+use std::{ collections::{ hash_map, HashMap }, sync::{ Arc, Mutex } };
+use std::env;
 
-use futures::{stream::FuturesUnordered, StreamExt};
+use futures::{ stream::FuturesUnordered, StreamExt };
 
-use crate::{
-	message::{self, Message},
-	serve::{ServeError, TracksReader},
-	setup,
-};
+use crate::{ message::{ self, Message }, serve::{ ServeError, TracksReader }, setup };
 
 use crate::watch::Queue;
 
-use super::{Announce, AnnounceRecv, Session, SessionError, Subscribed, SubscribedRecv, TrackStatusRequested};
+use super::{ Announce, AnnounceRecv, Session, SessionError, Subscribed, SubscribedRecv, TrackStatusRequested };
+
+// use moq_logger::{ LOGGER, LogMessage, get_current_time };
+use moq_logger::{ mqtt_log, LogMessage };
 
 // TODO remove Clone.
 #[derive(Clone)]
@@ -52,7 +49,9 @@ impl Publisher {
 	/// The caller uses [serve::TracksWriter] for static tracks and [serve::TracksRequest] for dynamic tracks.
 	pub async fn announce(&mut self, tracks: TracksReader) -> Result<(), SessionError> {
 		let announce = match self.announces.lock().unwrap().entry(tracks.namespace.clone()) {
-			hash_map::Entry::Occupied(_) => return Err(ServeError::Duplicate.into()),
+			hash_map::Entry::Occupied(_) => {
+				return Err(ServeError::Duplicate.into());
+			}
 			hash_map::Entry::Vacant(entry) => {
 				let (send, recv) = Announce::new(self.clone(), tracks.namespace.clone());
 				entry.insert(recv);
@@ -117,11 +116,9 @@ impl Publisher {
 
 	pub async fn serve_track_status(
 		mut track_status_request: TrackStatusRequested,
-		mut tracks: TracksReader,
+		mut tracks: TracksReader
 	) -> Result<(), SessionError> {
-		let track = tracks
-			.subscribe(&track_status_request.info.track.clone())
-			.ok_or(ServeError::NotFound)?;
+		let track = tracks.subscribe(&track_status_request.info.track.clone()).ok_or(ServeError::NotFound)?;
 		let response;
 
 		if let Some((latest_group_id, latest_object_id)) = track.latest() {
@@ -154,6 +151,17 @@ impl Publisher {
 	}
 
 	pub(crate) fn recv_message(&mut self, msg: message::Subscriber) -> Result<(), SessionError> {
+		// println!("received message: {:?} \n \n \n \n \n ", msg);
+
+		// // mqtt_log(&format!("received message: {:?}", msg));
+		// let log_message = LogMessage {
+		// 	stream: "MQTT".to_string(),
+		// 	eventType: "Received".to_string(),
+		// 	vantagePointID: "Publisher".to_string(),
+		// 	payload: HashMap::from([("message".to_string(), format!("{:?}", msg))]),
+		// };
+		// mqtt_log(log_message);
+
 		let res = match msg {
 			message::Subscriber::AnnounceOk(msg) => self.recv_announce_ok(msg),
 			message::Subscriber::AnnounceError(msg) => self.recv_announce_error(msg),
@@ -203,7 +211,9 @@ impl Publisher {
 
 			// Insert the abort handle into the lookup table.
 			let entry = match subscribes.entry(msg.id) {
-				hash_map::Entry::Occupied(_) => return Err(SessionError::Duplicate),
+				hash_map::Entry::Occupied(_) => {
+					return Err(SessionError::Duplicate);
+				}
 				hash_map::Entry::Vacant(entry) => entry,
 			};
 
@@ -241,9 +251,7 @@ impl Publisher {
 
 		let track_status_requested = TrackStatusRequested::new(self.clone(), msg);
 
-		announce
-			.recv_track_status_requested(track_status_requested)
-			.map_err(Into::into)
+		announce.recv_track_status_requested(track_status_requested).map_err(Into::into)
 	}
 
 	fn recv_unsubscribe(&mut self, msg: message::Unsubscribe) -> Result<(), SessionError> {
@@ -261,7 +269,7 @@ impl Publisher {
 			message::Publisher::SubscribeError(msg) => self.drop_subscribe(msg.id),
 			message::Publisher::Unannounce(msg) => self.drop_announce(msg.namespace.as_str()),
 			_ => (),
-		};
+		}
 
 		self.outgoing.push(msg.into()).ok();
 	}

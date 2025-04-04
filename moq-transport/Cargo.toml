@@ -24,3 +24,4 @@ web-transport = { workspace = true }
 
 paste = "1"
 futures = "0.3"
+moq-logger = { version = "0.1.0", path = "../moq-logger" }

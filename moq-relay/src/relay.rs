@@ -2,11 +2,15 @@ use std::net;
 
 use anyhow::Context;
 
-use futures::{stream::FuturesUnordered, FutureExt, StreamExt};
+use futures::{ stream::FuturesUnordered, FutureExt, StreamExt };
 use moq_native::quic;
 use url::Url;
 
-use crate::{Api, Consumer, Locals, Producer, Remotes, RemotesConsumer, RemotesProducer, Session};
+use crate::{ Api, Consumer, Locals, Producer, Remotes, RemotesConsumer, RemotesProducer, Session };
+
+use moq_logger::{ mqtt_log, LogMessage };
+use std::collections::HashMap;
+use std::env;
 
 pub struct RelayConfig {
 	/// Listen on this address
@@ -52,11 +56,10 @@ impl Relay {
 		let locals = Locals::new();
 
 		let remotes = api.clone().map(|api| {
-			Remotes {
+			(Remotes {
 				api,
 				quic: quic.client.clone(),
-			}
-			.produce()
+			}).produce()
 		});
 
 		Ok(Self {
@@ -78,14 +81,9 @@ impl Relay {
 
 		let forward = if let Some(url) = &self.announce {
 			log::info!("forwarding announces to {}", url);
-			let session = self
-				.quic
-				.client
-				.connect(url)
-				.await
-				.context("failed to establish forward connection")?;
-			let (session, publisher, subscriber) = moq_transport::session::Session::connect(session)
-				.await
+			let session = self.quic.client.connect(url).await.context("failed to establish forward connection")?;
+			let (session, publisher, subscriber) = moq_transport::session::Session
+				::connect(session).await
 				.context("failed to establish forward session")?;
 
 			// Create a normal looking session, except we never forward or register announces.
@@ -97,7 +95,7 @@ impl Relay {
 
 			let forward = session.producer.clone();
 
-			tasks.push(async move { session.run().await.context("forwarding failed") }.boxed());
+			tasks.push((async move { session.run().await.context("forwarding failed") }).boxed());
 
 			forward
 		} else {
@@ -106,7 +104,6 @@ impl Relay {
 
 		let mut server = self.quic.server.context("missing TLS certificate")?;
 		log::info!("listening on {}", server.local_addr()?);
-
 		loop {
 			tokio::select! {
 				res = server.accept() => {
@@ -125,6 +122,24 @@ impl Relay {
 								return Ok(());
 							}
 						};
+
+						let container_name = env::var("CONTAINER_NAME").unwrap_or_else(|_| "default-container".to_string());
+						let external_port = env::var("EXTERNAL_PORT").unwrap_or_else(|_| "default-port".to_string());
+						let listening_ip = env::var("LISTENING_IP").unwrap_or_else(|_| "default-ip".to_string());
+
+						println!("Container Name: {}", container_name);
+						println!("External Port: {}", external_port);
+						println!("Listening IP: {}", listening_ip);
+
+						let log_message = LogMessage {
+							stream: "logging-stream".to_string(),
+							eventType: "connect-accepted".to_string(),
+							vantagePointID: format!("{}:{}:{}",container_name, listening_ip, external_port),
+							payload: HashMap::from([
+								("remote_addr".to_string(), "test".to_string())
+							]),
+						};
+						mqtt_log(log_message);
 
 						let session = Session {
 							session,

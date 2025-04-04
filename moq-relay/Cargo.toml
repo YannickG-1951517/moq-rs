@@ -42,3 +42,4 @@ log = { workspace = true }
 env_logger = { workspace = true }
 tracing = "0.1"
 tracing-subscriber = "0.3"
+moq-logger = { version = "0.1.0", path = "../moq-logger" }
